@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -40,10 +40,15 @@ jobs:
       - name: Build debug APK
         run: gradle --no-daemon assembleDebug
 
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
+      - name: Prepare direct APK download
+        run: cp app/build/outputs/apk/debug/app-debug.apk BentleyPlayzScreenRecorder.apk
+
+      - name: Publish APK as a direct GitHub Release asset
+        uses: softprops/action-gh-release@v2
         with:
-          name: BentleyPlayzScreenRecorder-debug
-          path: app/build/outputs/apk/debug/*.apk
-          if-no-files-found: error
-          retention-days: 30
+          tag_name: screen-recorder-build-${{ github.run_number }}
+          name: BentleyPlayz Screen Recorder build #${{ github.run_number }}
+          body: Automated Android APK build from commit ${{ github.sha }}.
+          files: BentleyPlayzScreenRecorder.apk
+          generate_release_notes: false
+          make_latest: true
