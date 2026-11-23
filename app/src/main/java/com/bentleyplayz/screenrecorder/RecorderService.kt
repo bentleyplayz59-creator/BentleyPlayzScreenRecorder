@@ -32,6 +32,8 @@ class RecorderService:Service(){
  private var muxer:MediaMuxer?=null;private var videoTrack=-1;private var audioTrack=-1;private var muxerStarted=false
  private val muxLock=Any();private val pending=ArrayList<Sample>()
  private var outputFile:File?=null;private var audioThread:Thread?=null;private var videoThread:Thread?=null
+ @Volatile private var pausedAtUs=0L
+ @Volatile private var pausedTotalUs=0L
  private var mic:AudioRecord?=null;private var playback:AudioRecord?=null;private var surface:Surface?=null
  private data class Sample(val video:Boolean,val data:ByteArray,val pts:Long,val flags:Int)
  override fun onBind(intent:Intent?):IBinder?=null
@@ -101,7 +103,7 @@ class RecorderService:Service(){
    val nb=try{playback?.read(b,0,b.size)?:0}catch(_:Exception){0}
    if(na<=0&&nb<=0){SystemClock.sleep(5);continue}
    val n=maxOf(na,nb).coerceAtMost(out.size)
-   for(x in 0 until n){out[x]=((if(x<na)a[x].toInt()else 0)+(if(x<nb)b[x].toInt()else 0)).coerceIn(-32768,32767).toShort()}
+   for(x in 0 until n){out[x]=(if(playback==null)(if(x<na)a[x].toInt()else 0)else((if(x<na)a[x].toInt()else 0)+(if(x<nb)b[x].toInt()else 0))/2).coerceIn(-32768,32767).toShort()}
    val c=audioCodec?:break;val ix=c.dequeueInputBuffer(10000)
    if(ix>=0){val buf=c.getInputBuffer(ix);if(buf!=null){buf.clear();for(x in 0 until n){val v=out[x].toInt();buf.put((v and 255).toByte());buf.put((v shr 8).toByte())};val bytes=n*2;c.queueInputBuffer(ix,0,bytes,pts,0);pts+=1_000_000L*n/44100L}else c.queueInputBuffer(ix,0,0,pts,0)}
    drainAudio(c,info,false)
@@ -127,10 +129,10 @@ class RecorderService:Service(){
  private fun writeSample(video:Boolean,c:MediaCodec,index:Int,info:MediaCodec.BufferInfo){
   if(info.size<=0||info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG!=0)return
   val src=c.getOutputBuffer(index)?:return;src.position(info.offset);src.limit(info.offset+info.size);val bytes=ByteArray(info.size);src.get(bytes)
-  synchronized(muxLock){val t=if(video)videoTrack else audioTrack;if(muxerStarted&&t>=0){val bb=java.nio.ByteBuffer.wrap(bytes);val bi=MediaCodec.BufferInfo().apply{set(0,bytes.size,info.presentationTimeUs,info.flags)};muxer?.writeSampleData(t,bb,bi)}else pending.add(Sample(video,bytes,info.presentationTimeUs,info.flags))}
+  synchronized(muxLock){val t=if(video)videoTrack else audioTrack;if(muxerStarted&&t>=0){val bb=java.nio.ByteBuffer.wrap(bytes);val pts=if(video)info.presentationTimeUs-pausedTotalUs else info.presentationTimeUs;val bi=MediaCodec.BufferInfo().apply{set(0,bytes.size,pts,info.flags)};muxer?.writeSampleData(t,bb,bi)}else pending.add(Sample(video,bytes,info.presentationTimeUs,info.flags))}
  }
 
- private fun togglePause(){if(!running.get())return;paused=!paused;try{virtualDisplay?.setSurface(if(paused)null else surface)}catch(e:Exception){android.util.Log.w("BPRecorder","Pause surface update",e)};updateNote(if(paused)"Recording paused"else"Recording resumed")}
+ private fun togglePause(){if(!running.get())return;val now=System.nanoTime()/1000L;if(!paused){paused=true;pausedAtUs=now}else{paused=false;pausedTotalUs+=now-pausedAtUs;pausedAtUs=0L};try{virtualDisplay?.setSurface(if(paused)null else surface)}catch(e:Exception){android.util.Log.w("BPRecorder","Pause surface update",e)};updateNote(if(paused)"Recording paused"else"Recording resumed")}
  private fun stopCapture(){
   if(!running.getAndSet(false)){stopForeground(STOP_FOREGROUND_REMOVE);stopSelf();return}
   try{mic?.stop()}catch(_:Exception){};try{playback?.stop()}catch(_:Exception){}
