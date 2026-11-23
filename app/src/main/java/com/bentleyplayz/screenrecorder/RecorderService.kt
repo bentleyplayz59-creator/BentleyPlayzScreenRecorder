@@ -8,6 +8,7 @@ import android.os.*
 import android.provider.MediaStore
 import android.util.DisplayMetrics
 import android.view.Surface
+import android.view.WindowManager
 import java.io.*
 import java.text.SimpleDateFormat
 import java.util.*
