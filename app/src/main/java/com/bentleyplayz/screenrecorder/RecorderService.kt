@@ -93,7 +93,8 @@ class RecorderService:Service(){
    playback=AudioRecord.Builder().setAudioFormat(AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_16BIT).setSampleRate(rate).setChannelMask(AudioFormat.CHANNEL_IN_MONO).build()).setBufferSizeInBytes(size).setAudioPlaybackCaptureConfig(cfg).build()
    if(playback?.state!=AudioRecord.STATE_INITIALIZED){playback?.release();playback=null}
   }catch(e:Exception){android.util.Log.w("BPRecorder","Playback capture unavailable; microphone remains active",e);playback=null}
-  mic?.startRecording();playback?.startRecording()
+  mic?.startRecording()
+  try{playback?.startRecording()}catch(e:Exception){android.util.Log.w("BPRecorder","Internal playback stream could not start; continuing with microphone",e);try{playback?.release()}catch(_:Exception){};playback=null}
   audioThread=thread(name="BPAudioMixer"){mixAudio(size)}
  }
 
