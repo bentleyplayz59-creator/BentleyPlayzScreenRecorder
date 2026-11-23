@@ -50,8 +50,9 @@ class RecorderService:Service(){
    if(Build.VERSION.SDK_INT>=29)startForeground(NOTIFICATION_ID,note,android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION or android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)else startForeground(NOTIFICATION_ID,note)
    projection=(getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager).getMediaProjection(code,data)
    projection?.registerCallback(object:MediaProjection.Callback(){override fun onStop(){stopCapture()}},Handler(mainLooper))
+   running.set(true)
    setupEncoders()
-   running.set(true);paused=false
+   paused=false
    startAudio()
    videoThread=thread(name="BPVideoDrain"){drainVideo()}
    updateNote("Recording screen, internal audio and microphone")
@@ -63,7 +64,8 @@ class RecorderService:Service(){
   val dm=DisplayMetrics()
   @Suppress("DEPRECATION") val display=(getSystemService(WINDOW_SERVICE) as WindowManager).defaultDisplay
   display.getRealMetrics(dm)
-  val scale=if(quality==0)min(720f/dm.heightPixels,1f)else min(1080f/dm.heightPixels,1f)
+  val longEdge=maxOf(dm.widthPixels,dm.heightPixels)
+  val scale=if(quality==0)min(720f/longEdge,1f)else min(1080f/longEdge,1f)
   val w=((dm.widthPixels*scale).toInt()/2)*2;val h=((dm.heightPixels*scale).toInt()/2)*2
   val fps=if(quality==2)60 else 30;val rate=if(quality==0)4_000_000 else if(quality==2)12_000_000 else 8_000_000
   val vf=MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC,w.coerceAtLeast(2),h.coerceAtLeast(2))
@@ -112,8 +114,14 @@ class RecorderService:Service(){
  }
 
  private fun drainVideo(){
-  val c=videoCodec?:return;val info=MediaCodec.BufferInfo()
-  while(running.get())try{val ix=c.dequeueOutputBuffer(info,10000);when{ix==MediaCodec.INFO_OUTPUT_FORMAT_CHANGED->addFormat(true,c.outputFormat);ix>=0->{writeSample(true,c,ix,info);c.releaseOutputBuffer(ix,false)}}}catch(e:Exception){android.util.Log.e("BPRecorder","Video drain error",e);break}
+  val c=videoCodec?:return;val info=MediaCodec.BufferInfo();var eos=false
+  while(!eos)try{
+   val ix=c.dequeueOutputBuffer(info,10000)
+   when{
+    ix==MediaCodec.INFO_OUTPUT_FORMAT_CHANGED->addFormat(true,c.outputFormat)
+    ix>=0->{eos=info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM!=0;writeSample(true,c,ix,info);c.releaseOutputBuffer(ix,false)}
+   }
+  }catch(e:Exception){android.util.Log.e("BPRecorder","Video drain error",e);break}
  }
  private fun drainAudio(c:MediaCodec,info:MediaCodec.BufferInfo,finish:Boolean){
   var go=true
@@ -125,7 +133,7 @@ class RecorderService:Service(){
    if(!muxerStarted&&videoTrack>=0&&audioTrack>=0){m.start();muxerStarted=true;pending.forEach{s->writePending(m,s)};pending.clear()}
   }
  }
- private fun writePending(m:MediaMuxer,s:Sample){val t=if(s.video)videoTrack else audioTrack;val bb=java.nio.ByteBuffer.wrap(s.data);val bi=MediaCodec.BufferInfo().apply{set(0,s.data.size,s.pts,s.flags)};m.writeSampleData(t,bb,bi)}
+ private fun writePending(m:MediaMuxer,s:Sample){val t=if(s.video)videoTrack else audioTrack;val bb=java.nio.ByteBuffer.wrap(s.data);val pts=if(s.video)s.pts-pausedTotalUs else s.pts;val bi=MediaCodec.BufferInfo().apply{set(0,s.data.size,pts,s.flags)};m.writeSampleData(t,bb,bi)}
  private fun writeSample(video:Boolean,c:MediaCodec,index:Int,info:MediaCodec.BufferInfo){
   if(info.size<=0||info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG!=0)return
   val src=c.getOutputBuffer(index)?:return;src.position(info.offset);src.limit(info.offset+info.size);val bytes=ByteArray(info.size);src.get(bytes)
@@ -135,8 +143,9 @@ class RecorderService:Service(){
  private fun togglePause(){if(!running.get())return;val now=System.nanoTime()/1000L;if(!paused){paused=true;pausedAtUs=now}else{paused=false;pausedTotalUs+=now-pausedAtUs;pausedAtUs=0L};try{virtualDisplay?.setSurface(if(paused)null else surface)}catch(e:Exception){android.util.Log.w("BPRecorder","Pause surface update",e)};updateNote(if(paused)"Recording paused"else"Recording resumed")}
  private fun stopCapture(){
   if(!running.getAndSet(false)){stopForeground(STOP_FOREGROUND_REMOVE);stopSelf();return}
+  try{videoCodec?.signalEndOfInputStream()}catch(e:Exception){android.util.Log.w("BPRecorder","Video encoder EOS signal",e)}
   try{mic?.stop()}catch(_:Exception){};try{playback?.stop()}catch(_:Exception){}
-  try{audioThread?.join(1800)}catch(_:Exception){};try{videoThread?.join(1200)}catch(_:Exception){}
+  try{audioThread?.join(3000)}catch(_:Exception){};try{videoThread?.join(3000)}catch(_:Exception){}
   try{virtualDisplay?.release()}catch(_:Exception){};virtualDisplay=null
   try{projection?.stop()}catch(_:Exception){};projection=null
   try{mic?.release()}catch(_:Exception){};try{playback?.release()}catch(_:Exception){};mic=null;playback=null
