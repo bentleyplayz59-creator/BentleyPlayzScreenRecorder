@@ -17,11 +17,14 @@ import java.util.Date
 import java.util.Locale
 
 class MainActivity : Activity() {
+ companion object { const val ACTION_START_FROM_FLOATING_BALL = "com.bentleyplayz.screenrecorder.START_FROM_FLOATING_BALL" }
  private val bg=Color.rgb(12,15,27); private val panel=Color.rgb(26,33,55); private val blue=Color.rgb(82,116,255)
  private lateinit var status:TextView; private lateinit var library:LinearLayout
  private val captureRequest=4101; private val micRequest=4102; private var pendingStart=false; private var pendingOverlay=false
  private fun dp(v:Int)=(v*resources.displayMetrics.density).toInt()
- override fun onCreate(savedInstanceState:Bundle?) { super.onCreate(savedInstanceState);window.statusBarColor=bg;window.navigationBarColor=bg;render();refreshLibrary() }
+ override fun onCreate(savedInstanceState:Bundle?) { super.onCreate(savedInstanceState);window.statusBarColor=bg;window.navigationBarColor=bg;render();refreshLibrary();handleLaunchIntent(intent) }
+ override fun onNewIntent(intent:Intent?) { super.onNewIntent(intent);setIntent(intent);handleLaunchIntent(intent) }
+ private fun handleLaunchIntent(source:Intent?) { if(source?.action==ACTION_START_FROM_FLOATING_BALL){source.action=null;window.decorView.post { if(!getSharedPreferences("recorder",MODE_PRIVATE).getBoolean("is_recording",false))startRecording() else toast("A recording is already running.") } } }
  private fun render() {
   val scroll=ScrollView(this)
   val root=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL;setPadding(dp(22),dp(28),dp(22),dp(30));setBackgroundColor(bg) }
