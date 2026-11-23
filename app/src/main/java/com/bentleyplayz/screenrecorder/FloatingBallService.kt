@@ -50,7 +50,8 @@ class FloatingBallService:Service(){
  }
  private fun toggleMenu(){if(menu!=null){removeMenu();return}
   val panel=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(10),dp(10),dp(10),dp(10));setBackgroundColor(Color.rgb(24,31,53));elevation=dp(16).toFloat()}
-  panel.addView(menuButton("START / OPEN RECORDER"){openRecorder()})
+  panel.addView(menuButton("START RECORDING"){requestRecordingStart()})
+  panel.addView(menuButton("OPEN RECORDER"){openRecorder()})
   panel.addView(menuButton("PAUSE / RESUME"){send(RecorderService.ACTION_TOGGLE_PAUSE)})
   panel.addView(menuButton("STOP RECORDING"){send(RecorderService.ACTION_STOP)})
   panel.addView(menuButton("HIDE FLOATING BALL"){stopSelf()})
@@ -59,7 +60,8 @@ class FloatingBallService:Service(){
  }
  private fun menuButton(text:String,action:()->Unit)=TextView(this).apply{textSize=13f;this.text=text;gravity=Gravity.CENTER_VERTICAL;setTextColor(Color.WHITE);setPadding(dp(12),dp(12),dp(12),dp(12));setOnClickListener{removeMenu();action()}}
  private fun removeMenu(){menu?.let{if(it.isAttachedToWindow)wm.removeView(it)};menu=null}
- private fun openRecorder(){startActivity(Intent(this,MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP))}
+ private fun requestRecordingStart(){startActivity(Intent(this,MainActivity::class.java).setAction(MainActivity.ACTION_START_FROM_FLOATING_BALL).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP))}
+ private fun openRecorder(){startActivity(Intent(this,MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP))}
  private fun send(action:String){startService(Intent(this,RecorderService::class.java).setAction(action))}
  override fun onDestroy(){removeMenu();ball?.let{if(it.isAttachedToWindow)wm.removeView(it)};ball=null;super.onDestroy()}
  override fun onBind(intent:Intent?):IBinder?=null
