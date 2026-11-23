@@ -74,18 +74,19 @@ class FloatingBallService:Service(){
   panel.addView(menuButton("PAUSE / RESUME"){send(RecorderService.ACTION_TOGGLE_PAUSE)})
   panel.addView(menuButton("STOP RECORDING"){send(RecorderService.ACTION_STOP)})
   panel.addView(labelSmall("AUDIO TEST"))
-  val micButton=menuButton("START MICROPHONE TEST"){requestMicTest()}
+  val micButton=menuActionButton("START MICROPHONE TEST"){requestMicTest()}
   panel.addView(micButton)
   val meter=TextView(this).apply{text="INPUT  ▂▂▂▂▂▂▂▂";textSize=12f;setTextColor(Color.rgb(125,220,170));setPadding(dp(12),dp(5),dp(12),dp(10))}
   meterView=meter
   panel.addView(meter)
-  panel.addView(menuButton("STOP MICROPHONE TEST"){stopAudioTest()})
-  panel.addView(menuButton("PLAY TEST SOUND"){playTestSound()})
+  panel.addView(menuActionButton("STOP MICROPHONE TEST"){stopAudioTest()})
+  panel.addView(menuActionButton("PLAY TEST SOUND"){playTestSound()})
   panel.addView(menuButton("HIDE FLOATING BALL"){stopAudioTest();stopSelf()})
   val mp=WindowManager.LayoutParams(dp(210),WindowManager.LayoutParams.WRAP_CONTENT,WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,PixelFormat.TRANSLUCENT).apply{gravity=Gravity.TOP or Gravity.START;x=(lp.x-dp(145)).coerceAtLeast(0);y=(lp.y+dp(66)).coerceAtLeast(0)}
   menu=panel;wm.addView(panel,mp)
  }
  private fun labelSmall(text:String)=TextView(this).apply{textSize=11f;this.text=text;setTextColor(Color.rgb(142,166,255));setPadding(dp(12),dp(12),dp(12),dp(3))}
+ private fun menuActionButton(text:String,action:()->Unit)=TextView(this).apply{textSize=13f;this.text=text;gravity=Gravity.CENTER_VERTICAL;setTextColor(Color.WHITE);setPadding(dp(12),dp(12),dp(12),dp(12));setOnClickListener{action()}}
  private fun menuButton(text:String,action:()->Unit)=TextView(this).apply{textSize=13f;this.text=text;gravity=Gravity.CENTER_VERTICAL;setTextColor(Color.WHITE);setPadding(dp(12),dp(12),dp(12),dp(12));setOnClickListener{removeMenu();action()}}
  private fun removeMenu(){stopAudioTest();menu?.let{if(it.isAttachedToWindow)wm.removeView(it)};menu=null;meterView=null}
  private fun requestMicTest(){
@@ -98,11 +99,11 @@ class FloatingBallService:Service(){
  private fun startAudioTest(){
   if(checkSelfPermission(android.Manifest.permission.RECORD_AUDIO)!=android.content.pm.PackageManager.PERMISSION_GRANTED){handler.post{meterView?.text="Microphone permission required"};return}
   try{
+   stopAudioTest(false)
    if(Build.VERSION.SDK_INT>=29){
     val n=Notification.Builder(this,CHANNEL).setSmallIcon(android.R.drawable.presence_video_online).setContentTitle("BentleyPlayz audio test").setContentText("Microphone level test is running.").setOngoing(true).build()
     startForeground(NOTIFICATION_ID,n,ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
    }
-   stopAudioTest()
    val rate=48000
    val min=AudioRecord.getMinBufferSize(rate,AudioFormat.CHANNEL_IN_MONO,AudioFormat.ENCODING_PCM_16BIT)
    if(min<=0)throw IllegalStateException("Microphone is unavailable")
@@ -124,7 +125,7 @@ class FloatingBallService:Service(){
    }.apply{name="BPMicLevelMeter";start()}
   }catch(e:Exception){handler.post{meterView?.text="Mic test unavailable: ${e.message?: "audio error"}"}}
  }
- private fun stopAudioTest(){
+ private fun stopAudioTest(downgrade:Boolean=true){
   val rec=audioRecord
   audioRecord=null
   audioThread?.interrupt();audioThread=null
@@ -132,7 +133,7 @@ class FloatingBallService:Service(){
   try{rec?.release()}catch(_:Exception){}
   tone?.release();tone=null
   meterView?.text="INPUT  ▂▂▂▂▂▂▂▂"
-  if(Build.VERSION.SDK_INT>=29 && ::wm.isInitialized){
+  if(downgrade && Build.VERSION.SDK_INT>=29 && ::wm.isInitialized){
    try{
     val n=Notification.Builder(this,CHANNEL).setSmallIcon(android.R.drawable.presence_video_online).setContentTitle("BentleyPlayz floating controls").setContentText("BP quick controls are available on screen.").setOngoing(true).build()
     startForeground(NOTIFICATION_ID,n,ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
