@@ -51,6 +51,7 @@ class RecorderService:Service(){
    projection=(getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager).getMediaProjection(code,data)
    projection?.registerCallback(object:MediaProjection.Callback(){override fun onStop(){stopCapture()}},Handler(mainLooper))
    running.set(true)
+   getSharedPreferences("recorder",MODE_PRIVATE).edit().putBoolean("is_recording",true).putBoolean("is_paused",false).apply()
    setupEncoders()
    paused=false
    startAudio()
@@ -101,11 +102,11 @@ class RecorderService:Service(){
   var pts=System.nanoTime()/1000L
   while(running.get()){
    if(paused){SystemClock.sleep(25);continue}
-   val na=try{mic?.read(a,0,a.size)?:0}catch(_:Exception){0}
-   val nb=try{playback?.read(b,0,b.size)?:0}catch(_:Exception){0}
+   val na=try{mic?.read(a,0,a.size,AudioRecord.READ_NON_BLOCKING)?:0}catch(_:Exception){0}
+   val nb=try{playback?.read(b,0,b.size,AudioRecord.READ_NON_BLOCKING)?:0}
    if(na<=0&&nb<=0){SystemClock.sleep(5);continue}
    val n=maxOf(na,nb).coerceAtMost(out.size)
-   for(x in 0 until n){out[x]=((if(x<na)a[x].toInt()else 0)+(if(x<nb)b[x].toInt()else 0)).coerceIn(-32768,32767).toShort()}
+   for(x in 0 until n){val av=if(x<na)a[x].toInt()else 0;val bv=if(x<nb)b[x].toInt()else 0;val mixed=if(na>0&&nb>0)(av+bv)/2 else if(na>0)av else bv;out[x]=mixed.coerceIn(-32768,32767).toShort()}
    val c=audioCodec?:break;val ix=c.dequeueInputBuffer(10000)
    if(ix>=0){val buf=c.getInputBuffer(ix);if(buf!=null){buf.clear();for(x in 0 until n){val v=out[x].toInt();buf.put((v and 255).toByte());buf.put((v shr 8).toByte())};val bytes=n*2;c.queueInputBuffer(ix,0,bytes,pts,0);pts+=1_000_000L*n/44100L}else c.queueInputBuffer(ix,0,0,pts,0)}
    drainAudio(c,info,false)
@@ -154,7 +155,7 @@ class RecorderService:Service(){
    try{mic?.stop()}catch(e:Exception){android.util.Log.w("BPRecorder","Pause microphone",e)}
    try{playback?.stop()}catch(e:Exception){android.util.Log.w("BPRecorder","Pause playback capture",e)}
   }else{
-   paused=false;pausedTotalUs+=now-pausedAtUs;pausedAtUs=0L
+   paused=false;getSharedPreferences("recorder",MODE_PRIVATE).edit().putBoolean("is_paused",false).apply();pausedTotalUs+=now-pausedAtUs;pausedAtUs=0L
    try{mic?.startRecording()}catch(e:Exception){android.util.Log.w("BPRecorder","Resume microphone",e)}
    try{playback?.startRecording()}catch(e:Exception){android.util.Log.w("BPRecorder","Resume playback capture",e)}
   }
@@ -162,7 +163,8 @@ class RecorderService:Service(){
   updateNote(if(paused)"Recording paused"else"Recording resumed")
  }
  private fun stopCapture(){
-  if(!running.getAndSet(false)){stopForeground(STOP_FOREGROUND_REMOVE);stopSelf();return}
+  if(!running.getAndSet(false)){getSharedPreferences("recorder",MODE_PRIVATE).edit().putBoolean("is_recording",false).putBoolean("is_paused",false).apply();stopForeground(STOP_FOREGROUND_REMOVE);stopSelf();return}
+  getSharedPreferences("recorder",MODE_PRIVATE).edit().putBoolean("is_recording",false).putBoolean("is_paused",false).apply()
   try{videoCodec?.signalEndOfInputStream()}catch(e:Exception){android.util.Log.w("BPRecorder","Video encoder EOS signal",e)}
   try{mic?.stop()}catch(_:Exception){};try{playback?.stop()}catch(_:Exception){}
   try{audioThread?.join(3000)}catch(_:Exception){};try{videoThread?.join(3000)}catch(_:Exception){}
