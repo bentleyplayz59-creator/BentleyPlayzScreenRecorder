@@ -1,103 +1,32 @@
 package com.bentleyplayz.screenrecorder
-
 import android.app.Service
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.Typeface
 import android.os.IBinder
+import android.provider.Settings
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.WindowManager
 import android.widget.TextView
-import android.widget.Toast
 import kotlin.math.abs
-
-class FloatingBallService : Service() {
-    private lateinit var windowManager: WindowManager
-    private var ball: TextView? = null
-    private lateinit var layoutParams: WindowManager.LayoutParams
-
-    override fun onCreate() {
-        super.onCreate()
-        windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
-
-        val density = resources.displayMetrics.density
-        val diameter = (58 * density).toInt()
-
-        layoutParams = WindowManager.LayoutParams(
-            diameter,
-            diameter,
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
-            PixelFormat.TRANSLUCENT
-        ).apply {
-            gravity = Gravity.TOP or Gravity.START
-            x = (16 * density).toInt()
-            y = (180 * density).toInt()
-        }
-
-        val bubble = TextView(this).apply {
-            text = "BP"
-            textSize = 17f
-            typeface = Typeface.DEFAULT_BOLD
-            gravity = Gravity.CENTER
-            setTextColor(Color.WHITE)
-            setBackgroundResource(android.R.drawable.btn_default)
-            background.setTint(Color.rgb(82, 111, 245))
-            elevation = 12 * density
-        }
-
-        var startX = 0
-        var startY = 0
-        var touchX = 0f
-        var touchY = 0f
-        var moved = false
-
-        bubble.setOnTouchListener { view, event ->
-            when (event.action) {
-                MotionEvent.ACTION_DOWN -> {
-                    startX = layoutParams.x
-                    startY = layoutParams.y
-                    touchX = event.rawX
-                    touchY = event.rawY
-                    moved = false
-                    true
-                }
-                MotionEvent.ACTION_MOVE -> {
-                    val dx = (event.rawX - touchX).toInt()
-                    val dy = (event.rawY - touchY).toInt()
-                    if (abs(dx) > 5 || abs(dy) > 5) moved = true
-                    layoutParams.x = startX + dx
-                    layoutParams.y = startY + dy
-                    windowManager.updateViewLayout(view, layoutParams)
-                    true
-                }
-                MotionEvent.ACTION_UP -> {
-                    if (!moved) {
-                        Toast.makeText(
-                            this,
-                            "BentleyPlayz Recorder controls",
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    }
-                    true
-                }
-                else -> false
-            }
-        }
-
-        ball = bubble
-        windowManager.addView(bubble, layoutParams)
-    }
-
-    override fun onDestroy() {
-        ball?.let {
-            if (it.isAttachedToWindow) windowManager.removeView(it)
-        }
-        ball = null
-        super.onDestroy()
-    }
-
-    override fun onBind(intent: Intent?): IBinder? = null
+class FloatingBallService:Service(){
+ private lateinit var wm:WindowManager;private var ball:TextView?=null;private lateinit var lp:WindowManager.LayoutParams
+ override fun onCreate(){
+  super.onCreate();if(!Settings.canDrawOverlays(this)){stopSelf();return}
+  wm=getSystemService(WINDOW_SERVICE) as WindowManager;val den=resources.displayMetrics.density;val size=(58*den).toInt()
+  lp=WindowManager.LayoutParams(size,size,WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,PixelFormat.TRANSLUCENT).apply{gravity=Gravity.TOP or Gravity.START;x=(18*den).toInt();y=(190*den).toInt()}
+  val v=TextView(this).apply{text="BP";textSize=17f;typeface=Typeface.DEFAULT_BOLD;gravity=Gravity.CENTER;setTextColor(Color.WHITE);setBackgroundResource(android.R.drawable.btn_default);background.setTint(Color.rgb(78,111,255));elevation=12*den}
+  var dx=0f;var dy=0f;var ox=0;var oy=0;var dragged=false
+  v.setOnTouchListener{view,e->when(e.action){
+   MotionEvent.ACTION_DOWN->{dx=e.rawX;dy=e.rawY;ox=lp.x;oy=lp.y;dragged=false;true}
+   MotionEvent.ACTION_MOVE->{val x=(e.rawX-dx).toInt();val y=(e.rawY-dy).toInt();if(abs(x)>5||abs(y)>5)dragged=true;lp.x=ox+x;lp.y=oy+y;wm.updateViewLayout(view,lp);true}
+   MotionEvent.ACTION_UP->{if(!dragged)startActivity(Intent(this,MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP));true}
+   else->false
+  }}
+  ball=v;wm.addView(v,lp)
+ }
+ override fun onDestroy(){ball?.let{if(it.isAttachedToWindow)wm.removeView(it)};ball=null;super.onDestroy()}
+ override fun onBind(intent:Intent?):IBinder?=null
 }
