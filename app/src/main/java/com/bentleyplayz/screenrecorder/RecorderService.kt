@@ -105,7 +105,7 @@ class RecorderService:Service(){
    val nb=try{playback?.read(b,0,b.size)?:0}catch(_:Exception){0}
    if(na<=0&&nb<=0){SystemClock.sleep(5);continue}
    val n=maxOf(na,nb).coerceAtMost(out.size)
-   for(x in 0 until n){out[x]=(if(playback==null)(if(x<na)a[x].toInt()else 0)else((if(x<na)a[x].toInt()else 0)+(if(x<nb)b[x].toInt()else 0))/2).coerceIn(-32768,32767).toShort()}
+   for(x in 0 until n){out[x]=((if(x<na)a[x].toInt()else 0)+(if(x<nb)b[x].toInt()else 0)).coerceIn(-32768,32767).toShort()}
    val c=audioCodec?:break;val ix=c.dequeueInputBuffer(10000)
    if(ix>=0){val buf=c.getInputBuffer(ix);if(buf!=null){buf.clear();for(x in 0 until n){val v=out[x].toInt();buf.put((v and 255).toByte());buf.put((v shr 8).toByte())};val bytes=n*2;c.queueInputBuffer(ix,0,bytes,pts,0);pts+=1_000_000L*n/44100L}else c.queueInputBuffer(ix,0,0,pts,0)}
    drainAudio(c,info,false)
