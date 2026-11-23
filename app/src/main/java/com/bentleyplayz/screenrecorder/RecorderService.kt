@@ -103,7 +103,7 @@ class RecorderService:Service(){
   while(running.get()){
    if(paused){SystemClock.sleep(25);continue}
    val na=try{mic?.read(a,0,a.size,AudioRecord.READ_NON_BLOCKING)?:0}catch(_:Exception){0}
-   val nb=try{playback?.read(b,0,b.size,AudioRecord.READ_NON_BLOCKING)?:0}
+   val nb=try{playback?.read(b,0,b.size,AudioRecord.READ_NON_BLOCKING)?:0}catch(_:Exception){0}
    if(na<=0&&nb<=0){SystemClock.sleep(5);continue}
    val n=maxOf(na,nb).coerceAtMost(out.size)
    for(x in 0 until n){val av=if(x<na)a[x].toInt()else 0;val bv=if(x<nb)b[x].toInt()else 0;val mixed=if(na>0&&nb>0)(av+bv)/2 else if(na>0)av else bv;out[x]=mixed.coerceIn(-32768,32767).toShort()}
