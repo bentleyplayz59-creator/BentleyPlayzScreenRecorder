@@ -13,6 +13,8 @@ import java.io.*
 import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.ArrayBlockingQueue
+import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
 import kotlin.math.min
 
@@ -31,7 +33,9 @@ class RecorderService:Service(){
  private var videoCodec:MediaCodec?=null;private var audioCodec:MediaCodec?=null
  private var muxer:MediaMuxer?=null;private var videoTrack=-1;private var audioTrack=-1;private var muxerStarted=false
  private val muxLock=Any();private val pending=ArrayList<Sample>()
- private var outputFile:File?=null;private var audioThread:Thread?=null;private var videoThread:Thread?=null
+ private var outputFile:File?=null;private var audioThread:Thread?=null;private var micReaderThread:Thread?=null;private var playbackReaderThread:Thread?=null;private var videoThread:Thread?=null
+ private val micQueue=ArrayBlockingQueue<ShortArray>(12)
+ private val playbackQueue=ArrayBlockingQueue<ShortArray>(12)
  @Volatile private var pausedAtUs=0L
  @Volatile private var pausedTotalUs=0L
  private var mic:AudioRecord?=null;private var playback:AudioRecord?=null;private var surface:Surface?=null
@@ -72,7 +76,7 @@ class RecorderService:Service(){
   val vf=MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC,w.coerceAtLeast(2),h.coerceAtLeast(2))
   vf.setInteger(MediaFormat.KEY_COLOR_FORMAT,MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface);vf.setInteger(MediaFormat.KEY_BIT_RATE,rate);vf.setInteger(MediaFormat.KEY_FRAME_RATE,fps);vf.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL,2)
   videoCodec=MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC).apply{configure(vf,null,null,MediaCodec.CONFIGURE_FLAG_ENCODE);surface=createInputSurface();start()}
-  val af=MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC,44100,1)
+  val af=MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC,48000,1)
   af.setInteger(MediaFormat.KEY_AAC_PROFILE,MediaCodecInfo.CodecProfileLevel.AACObjectLC);af.setInteger(MediaFormat.KEY_BIT_RATE,128000);af.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE,16384)
   audioCodec=MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_AAC).apply{configure(af,null,null,MediaCodec.CONFIGURE_FLAG_ENCODE);start()}
   val dir=File(getExternalFilesDir(null),"Recordings").apply{mkdirs()}
@@ -82,34 +86,62 @@ class RecorderService:Service(){
  }
 
  private fun startAudio(){
-  val rate=44100;val minSize=AudioRecord.getMinBufferSize(rate,AudioFormat.CHANNEL_IN_MONO,AudioFormat.ENCODING_PCM_16BIT)
-  if(minSize<=0)throw IllegalStateException("PCM audio input unavailable")
-  val size=minSize.coerceAtLeast(8192)*2
-  mic=AudioRecord(MediaRecorder.AudioSource.MIC,rate,AudioFormat.CHANNEL_IN_MONO,AudioFormat.ENCODING_PCM_16BIT,size)
+  val rate=48000
+  val minSize=AudioRecord.getMinBufferSize(rate,AudioFormat.CHANNEL_IN_MONO,AudioFormat.ENCODING_PCM_16BIT)
+  if(minSize<=0)throw IllegalStateException("PCM audio input unavailable: $minSize")
+  val bufferBytes=maxOf(minSize*2,16384)
+  mic=AudioRecord(MediaRecorder.AudioSource.MIC,rate,AudioFormat.CHANNEL_IN_MONO,AudioFormat.ENCODING_PCM_16BIT,bufferBytes)
   if(mic?.state!=AudioRecord.STATE_INITIALIZED)throw IllegalStateException("Microphone initialization failed")
   if(Build.VERSION.SDK_INT>=29)try{
    val cfg=AudioPlaybackCaptureConfiguration.Builder(projection!!)
     .addMatchingUsage(AudioAttributes.USAGE_MEDIA).addMatchingUsage(AudioAttributes.USAGE_GAME).addMatchingUsage(AudioAttributes.USAGE_UNKNOWN).build()
-   playback=AudioRecord.Builder().setAudioFormat(AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_16BIT).setSampleRate(rate).setChannelMask(AudioFormat.CHANNEL_IN_MONO).build()).setBufferSizeInBytes(size).setAudioPlaybackCaptureConfig(cfg).build()
+   playback=AudioRecord.Builder().setAudioFormat(AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_16BIT).setSampleRate(rate).setChannelMask(AudioFormat.CHANNEL_IN_MONO).build()).setBufferSizeInBytes(bufferBytes).setAudioPlaybackCaptureConfig(cfg).build()
    if(playback?.state!=AudioRecord.STATE_INITIALIZED){playback?.release();playback=null}
   }catch(e:Exception){android.util.Log.w("BPRecorder","Playback capture unavailable; microphone remains active",e);playback=null}
+  micQueue.clear();playbackQueue.clear()
   mic?.startRecording()
   try{playback?.startRecording()}catch(e:Exception){android.util.Log.w("BPRecorder","Internal playback stream could not start; continuing with microphone",e);try{playback?.release()}catch(_:Exception){};playback=null}
-  audioThread=thread(name="BPAudioMixer"){mixAudio(size)}
+  micReaderThread=thread(name="BPMicrophoneReader"){readAudioSource(mic,micQueue,"microphone")}
+  playbackReaderThread=playback?.let{source->thread(name="BPPlaybackReader"){readAudioSource(source,playbackQueue,"playback")}}
+  audioThread=thread(name="BPAudioMixer"){mixAudio()}
  }
 
- private fun mixAudio(size:Int){
-  val a=ShortArray(size/2);val b=ShortArray(size/2);val out=ShortArray(size/2);val info=MediaCodec.BufferInfo()
-  var pts=System.nanoTime()/1000L
+ private fun readAudioSource(source:AudioRecord?,queue:ArrayBlockingQueue<ShortArray>,label:String){
+  if(source==null)return
+  val block=ShortArray(1024)
   while(running.get()){
-   if(paused){SystemClock.sleep(25);continue}
-   val na=try{mic?.read(a,0,a.size,AudioRecord.READ_NON_BLOCKING)?:0}catch(_:Exception){0}
-   val nb=try{playback?.read(b,0,b.size,AudioRecord.READ_NON_BLOCKING)?:0}catch(_:Exception){0}
-   if(na<=0&&nb<=0){SystemClock.sleep(5);continue}
-   val n=maxOf(na,nb).coerceAtMost(out.size)
-   for(x in 0 until n){val av=if(x<na)a[x].toInt()else 0;val bv=if(x<nb)b[x].toInt()else 0;val mixed=if(na>0&&nb>0)(av+bv)/2 else if(na>0)av else bv;out[x]=mixed.coerceIn(-32768,32767).toShort()}
-   val c=audioCodec?:break;val ix=c.dequeueInputBuffer(10000)
-   if(ix>=0){val buf=c.getInputBuffer(ix);if(buf!=null){buf.clear();for(x in 0 until n){val v=out[x].toInt();buf.put((v and 255).toByte());buf.put((v shr 8).toByte())};val bytes=n*2;c.queueInputBuffer(ix,0,bytes,pts,0);pts+=1_000_000L*n/44100L}else c.queueInputBuffer(ix,0,0,pts,0)}
+   val count=try{source.read(block,0,block.size,AudioRecord.READ_BLOCKING)}catch(e:Exception){android.util.Log.e("BPRecorder","$label capture read failed",e);break}
+   if(count>0){
+    if(!paused){val chunk=block.copyOf(count);if(!queue.offer(chunk)){queue.poll();queue.offer(chunk)}}
+   }else if(count<0){android.util.Log.e("BPRecorder","$label capture returned AudioRecord error $count");break}
+  }
+ }
+
+ private fun mixAudio(){
+  val info=MediaCodec.BufferInfo()
+  var pts=0L
+  val rate=48000L
+  while(running.get()){
+   if(paused){micQueue.clear();playbackQueue.clear();SystemClock.sleep(10);continue}
+   val micBlock=micQueue.poll(100,TimeUnit.MILLISECONDS)?:continue
+   val playbackBlock=playbackQueue.poll(15,TimeUnit.MILLISECONDS)
+   val n=micBlock.size.coerceAtMost(1024)
+   val c=audioCodec?:break
+   val ix=c.dequeueInputBuffer(10000)
+   if(ix>=0){
+    val buf=c.getInputBuffer(ix)
+    if(buf!=null){
+     buf.clear()
+     for(x in 0 until n){
+      val av=micBlock[x].toInt()
+      val bv=if(playbackBlock!=null&&x<playbackBlock.size)playbackBlock[x].toInt()else 0
+      val mixed=if(playbackBlock!=null&&x<playbackBlock.size)(av/2+bv/2)else av
+      buf.put((mixed and 255).toByte());buf.put((mixed shr 8).toByte())
+     }
+     c.queueInputBuffer(ix,0,n*2,pts,0)
+    }else c.queueInputBuffer(ix,0,0,pts,0)
+   }
+   pts+=1_000_000L*n/rate
    drainAudio(c,info,false)
   }
   try{val c=audioCodec?:return;val ix=c.dequeueInputBuffer(10000);if(ix>=0)c.queueInputBuffer(ix,0,0,pts,MediaCodec.BUFFER_FLAG_END_OF_STREAM);drainAudio(c,info,true)}catch(e:Exception){android.util.Log.w("BPRecorder","Audio finalization",e)}
@@ -153,12 +185,10 @@ class RecorderService:Service(){
   val now=System.nanoTime()/1000L
   if(!paused){
    paused=true;pausedAtUs=now
-   try{mic?.stop()}catch(e:Exception){android.util.Log.w("BPRecorder","Pause microphone",e)}
-   try{playback?.stop()}catch(e:Exception){android.util.Log.w("BPRecorder","Pause playback capture",e)}
+   micQueue.clear();playbackQueue.clear()
   }else{
    paused=false;getSharedPreferences("recorder",MODE_PRIVATE).edit().putBoolean("is_paused",false).apply();pausedTotalUs+=now-pausedAtUs;pausedAtUs=0L
-   try{mic?.startRecording()}catch(e:Exception){android.util.Log.w("BPRecorder","Resume microphone",e)}
-   try{playback?.startRecording()}catch(e:Exception){android.util.Log.w("BPRecorder","Resume playback capture",e)}
+   micQueue.clear();playbackQueue.clear()
   }
   try{virtualDisplay?.setSurface(if(paused)null else surface)}catch(e:Exception){android.util.Log.w("BPRecorder","Pause surface update",e)}
   updateNote(if(paused)"Recording paused"else"Recording resumed")
@@ -168,7 +198,7 @@ class RecorderService:Service(){
   getSharedPreferences("recorder",MODE_PRIVATE).edit().putBoolean("is_recording",false).putBoolean("is_paused",false).apply()
   try{videoCodec?.signalEndOfInputStream()}catch(e:Exception){android.util.Log.w("BPRecorder","Video encoder EOS signal",e)}
   try{mic?.stop()}catch(_:Exception){};try{playback?.stop()}catch(_:Exception){}
-  try{audioThread?.join(3000)}catch(_:Exception){};try{videoThread?.join(3000)}catch(_:Exception){}
+  try{audioThread?.join(3000)}catch(_:Exception){};try{micReaderThread?.join(1500)}catch(_:Exception){};try{playbackReaderThread?.join(1500)}catch(_:Exception){};try{videoThread?.join(3000)}catch(_:Exception){}
   try{virtualDisplay?.release()}catch(_:Exception){};virtualDisplay=null
   try{projection?.stop()}catch(_:Exception){};projection=null
   try{mic?.release()}catch(_:Exception){};try{playback?.release()}catch(_:Exception){};mic=null;playback=null
