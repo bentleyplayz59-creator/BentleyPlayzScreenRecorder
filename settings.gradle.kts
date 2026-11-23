@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "BentleyPlayzScreenRecorder"
+rootProject.name = "BentleyPlayzVideoVoiceover"
 include(":app")

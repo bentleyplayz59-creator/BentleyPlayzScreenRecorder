@@ -1,4 +1,4 @@
-name: Android APK
+name: BentleyPlayz Video Voiceover Android APK
 
 on:
   push:
@@ -37,10 +37,10 @@ jobs:
         with:
           gradle-version: "8.13"
 
-      - name: Compile debug variant (validation only)
+      - name: Compile debug variant
         run: gradle --no-daemon assembleDebug
 
-      - name: Restore persistent release keystore
+      - name: Restore existing release keystore
         env:
           KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
           KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
@@ -51,12 +51,12 @@ jobs:
           missing=0
           for name in KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
             if [ -z "${!name}" ]; then
-              echo "::error::Missing GitHub Actions secret: RELEASE_${name}"
+              echo "::error::Missing signing secret: RELEASE_${name}"
               missing=1
             fi
           done
           if [ "$missing" -ne 0 ]; then
-            echo "::error::Add the four RELEASE_* signing secrets in repository Settings > Secrets and variables > Actions > Secrets."
+            echo "::error::The existing RELEASE_* signing secrets must remain configured."
             false
           fi
           printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/bentleyplayz-release.jks"
@@ -68,20 +68,20 @@ jobs:
       - name: Build signed release APK
         run: gradle --no-daemon assembleRelease
 
-      - name: Prepare direct APK download
-        run: cp app/build/outputs/apk/release/app-release.apk BentleyPlayzScreenRecorder.apk
+      - name: Prepare APK
+        run: cp app/build/outputs/apk/release/app-release.apk BentleyPlayzVideoVoiceover.apk
 
       - name: Verify APK signature
         run: |
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)"
-          "$APKSIGNER" verify --verbose --print-certs BentleyPlayzScreenRecorder.apk
+          "$APKSIGNER" verify --verbose --print-certs BentleyPlayzVideoVoiceover.apk
 
-      - name: Publish signed APK as a direct GitHub Release asset
+      - name: Publish signed APK
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: screen-recorder-build-${{ github.run_number }}
-          name: BentleyPlayz Screen Recorder build #${{ github.run_number }}
-          body: Signed Android release APK from commit ${{ github.sha }}.
-          files: BentleyPlayzScreenRecorder.apk
+          tag_name: video-voiceover-build-${{ github.run_number }}
+          name: BentleyPlayz Video Voiceover build #${{ github.run_number }}
+          body: Signed Android release APK from commit ${{ github.sha }}. Keeps the existing application ID and release signing identity.
+          files: BentleyPlayzVideoVoiceover.apk
           generate_release_notes: false
           make_latest: true

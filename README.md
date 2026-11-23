@@ -1,42 +1,41 @@
-# BentleyPlayz Screen Recorder
+# BentleyPlayz Video Voiceover
 
-Native Android screen recorder by BentleyPlayz.
+Android MP4 voiceover editor by BentleyPlayz. This replaces the former screen-recorder app while retaining the same Android application ID and release-signing configuration, so signed releases can update the existing installation.
 
-## Implemented
+## Features
 
-- Android MediaProjection screen capture.
-- H.264 video encoding to MP4 using MediaCodec.
-- AAC audio encoding.
-- Microphone capture through AudioRecord.
-- Android 10+ playback capture for supported media/game audio.
-- Mixed microphone and internal playback audio in one mono AAC track.
-- Draggable floating BP control with Start/Open, Pause/Resume, Stop and Hide actions.
-- Persistent floating-control foreground service and notification action to hide the ball.
-- Pause and resume capture.
-- Foreground recording notification with Stop action.
-- 720p/30, 1080p/30 and 1080p/60 quality presets.
-- Recording library with play, share and delete actions.
-- Copy completed MP4 recordings to Movies/BentleyPlayz Screen Recorder.
-- Pillow-generated custom app icon.
-
-## Audio capture compatibility
-
-Internal playback capture is subject to Android's AudioPlaybackCapture rules. The source app must allow capture, and protected audio, voice calls, and apps that opt out cannot be recorded internally. Microphone capture remains independent. The app combines the two captured PCM inputs into one AAC audio track.
+- Import MP4 video through Android's file picker.
+- Preview video inside the app.
+- Record microphone narration while the video plays from the beginning.
+- Review the recorded voiceover.
+- Independently adjust original video audio and voiceover gain.
+- Export a new MP4 with the original video and mixed audio.
+- Save exports to Movies/BentleyPlayz Video Voiceover.
+- Keep the imported source file unchanged.
 
 ## Build
 
-GitHub Actions builds the debug APK on pushes to `main` and manual workflow dispatch. The artifact is named `BentleyPlayzScreenRecorder-debug`.
+GitHub Actions builds the debug APK on pushes to `main` and manual workflow dispatch. Signed releases use the existing repository secrets:
 
-## Install and first launch
+- `RELEASE_KEYSTORE_BASE64`
+- `RELEASE_KEYSTORE_PASSWORD`
+- `RELEASE_KEY_ALIAS`
+- `RELEASE_KEY_PASSWORD`
 
-1. Install the debug APK from the GitHub Actions artifact.
-2. Open BentleyPlayz Screen Recorder and grant microphone access.
-3. Select **Enable Floating Ball** and allow display-over-other-apps access.
-4. Select **Start Recording** and approve Android's screen-capture prompt.
-5. Choose **Start now** in the Android capture prompt. Recording begins with internal playback capture and microphone capture enabled.
-6. Tap the floating BP ball for quick Start/Open, Pause/Resume, Stop and Hide actions.
-7. Completed MP4 files appear in the app's recording library and in Movies/BentleyPlayz Screen Recorder.
+The Android application ID remains `com.bentleyplayz.screenrecorder`. Version 2.0.0 uses version code 4.
 
-## Device verification
+## Use
 
-The GitHub Actions build verifies Kotlin compilation, logo generation and APK packaging. Real-device testing is still required for OEM-specific projection behavior, audio-source policies, pause/resume synchronization, and playback compatibility. Android's own capture rules prevent internal audio from apps that block playback capture; microphone recording remains independently available.
+1. Import an MP4.
+2. Use the player controls to preview it.
+3. Select Record Voiceover. Recording starts at the beginning and video playback starts.
+4. Stop the recording when narration is complete.
+5. Review the narration if needed.
+6. Set the original/game audio and voiceover levels independently.
+7. Export Mixed MP4. The finished file is saved in the Movies folder listed above.
+
+Use headphones while recording to reduce the chance that the video's speaker audio is picked up by the microphone. The source MP4 is not overwritten.
+
+## Validation
+
+The GitHub Actions workflow compiles the debug app, builds a signed release APK, and verifies its signature. Actual playback, microphone quality, audio alignment, and export compatibility still require testing on an Android device.
