@@ -124,8 +124,14 @@ class RecorderService:Service(){
   }catch(e:Exception){android.util.Log.e("BPRecorder","Video drain error",e);break}
  }
  private fun drainAudio(c:MediaCodec,info:MediaCodec.BufferInfo,finish:Boolean){
-  var go=true
-  while(go){val ix=c.dequeueOutputBuffer(info,0);when{ix==MediaCodec.INFO_OUTPUT_FORMAT_CHANGED->addFormat(false,c.outputFormat);ix>=0->{val eos=info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM!=0;writeSample(false,c,ix,info);c.releaseOutputBuffer(ix,false);if(eos)go=false};else->if(!finish||ix==MediaCodec.INFO_TRY_AGAIN_LATER)go=false}
+  var go=true;var emptyPolls=0
+  while(go){
+   val ix=c.dequeueOutputBuffer(info,if(finish)10000 else 0)
+   when{
+    ix==MediaCodec.INFO_OUTPUT_FORMAT_CHANGED->addFormat(false,c.outputFormat)
+    ix>=0->{emptyPolls=0;val eos=info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM!=0;writeSample(false,c,ix,info);c.releaseOutputBuffer(ix,false);if(eos)go=false}
+    else->{if(!finish)go=false else {emptyPolls++;if(emptyPolls>=50)go=false}}
+   }
   }
  }
  private fun addFormat(video:Boolean,format:MediaFormat){
