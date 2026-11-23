@@ -61,7 +61,9 @@ class FloatingBallService:Service(){
  private fun menuButton(text:String,action:()->Unit)=TextView(this).apply{textSize=13f;this.text=text;gravity=Gravity.CENTER_VERTICAL;setTextColor(Color.WHITE);setPadding(dp(12),dp(12),dp(12),dp(12));setOnClickListener{removeMenu();action()}}
  private fun removeMenu(){menu?.let{if(it.isAttachedToWindow)wm.removeView(it)};menu=null}
  private fun requestRecordingStart(){
-  val launch=Intent(this,CapturePermissionActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
+  val launch=Intent(this,CapturePermissionActivity::class.java).apply{
+   addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
+  }
   startActivity(launch)
  }
  private fun openRecorder(){startActivity(Intent(this,MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP))}
