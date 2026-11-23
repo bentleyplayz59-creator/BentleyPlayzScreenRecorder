@@ -146,7 +146,21 @@ class RecorderService:Service(){
   synchronized(muxLock){val t=if(video)videoTrack else audioTrack;if(muxerStarted&&t>=0){val bb=java.nio.ByteBuffer.wrap(bytes);val pts=if(video)info.presentationTimeUs-pausedTotalUs else info.presentationTimeUs;val bi=MediaCodec.BufferInfo().apply{set(0,bytes.size,pts,info.flags)};muxer?.writeSampleData(t,bb,bi)}else pending.add(Sample(video,bytes,info.presentationTimeUs,info.flags))}
  }
 
- private fun togglePause(){if(!running.get())return;val now=System.nanoTime()/1000L;if(!paused){paused=true;pausedAtUs=now}else{paused=false;pausedTotalUs+=now-pausedAtUs;pausedAtUs=0L};try{virtualDisplay?.setSurface(if(paused)null else surface)}catch(e:Exception){android.util.Log.w("BPRecorder","Pause surface update",e)};updateNote(if(paused)"Recording paused"else"Recording resumed")}
+ private fun togglePause(){
+  if(!running.get())return
+  val now=System.nanoTime()/1000L
+  if(!paused){
+   paused=true;pausedAtUs=now
+   try{mic?.stop()}catch(e:Exception){android.util.Log.w("BPRecorder","Pause microphone",e)}
+   try{playback?.stop()}catch(e:Exception){android.util.Log.w("BPRecorder","Pause playback capture",e)}
+  }else{
+   paused=false;pausedTotalUs+=now-pausedAtUs;pausedAtUs=0L
+   try{mic?.startRecording()}catch(e:Exception){android.util.Log.w("BPRecorder","Resume microphone",e)}
+   try{playback?.startRecording()}catch(e:Exception){android.util.Log.w("BPRecorder","Resume playback capture",e)}
+  }
+  try{virtualDisplay?.setSurface(if(paused)null else surface)}catch(e:Exception){android.util.Log.w("BPRecorder","Pause surface update",e)}
+  updateNote(if(paused)"Recording paused"else"Recording resumed")
+ }
  private fun stopCapture(){
   if(!running.getAndSet(false)){stopForeground(STOP_FOREGROUND_REMOVE);stopSelf();return}
   try{videoCodec?.signalEndOfInputStream()}catch(e:Exception){android.util.Log.w("BPRecorder","Video encoder EOS signal",e)}
