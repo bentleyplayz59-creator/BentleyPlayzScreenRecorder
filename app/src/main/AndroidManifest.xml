@@ -20,7 +20,8 @@
    android:taskAffinity="${applicationId}.capture"
    android:excludeFromRecents="true"/>
   <service android:name=".RecorderService" android:exported="false" android:foregroundServiceType="mediaProjection|microphone"/>
-  <service android:name=".FloatingBallService" android:exported="false" android:foregroundServiceType="specialUse">
+  <activity android:name=".MicTestPermissionActivity" android:exported="false" android:theme="@android:style/Theme.Translucent.NoTitleBar" android:excludeFromRecents="true"/>
+  <service android:name=".FloatingBallService" android:exported="false" android:foregroundServiceType="specialUse|microphone">
    <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="Persistent draggable screen recorder floating controls requested by the user."/>
   </service>
  </application>
