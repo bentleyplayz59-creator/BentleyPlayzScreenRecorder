@@ -19,7 +19,7 @@ import java.util.Locale
 class MainActivity : Activity() {
  private val bg=Color.rgb(12,15,27); private val panel=Color.rgb(26,33,55); private val blue=Color.rgb(82,116,255)
  private lateinit var status:TextView; private lateinit var library:LinearLayout
- private val captureRequest=4101; private val micRequest=4102; private var pendingStart=false
+ private val captureRequest=4101; private val micRequest=4102; private var pendingStart=false; private var pendingOverlay=false
  private fun dp(v:Int)=(v*resources.displayMetrics.density).toInt()
  override fun onCreate(savedInstanceState:Bundle?) { super.onCreate(savedInstanceState);window.statusBarColor=bg;window.navigationBarColor=bg;render();refreshLibrary() }
  private fun render() {
@@ -52,7 +52,10 @@ class MainActivity : Activity() {
  private fun label(s:String,size:Int,color:Int,top:Int=0)=TextView(this).apply{text=s;textSize=size.toFloat();setTextColor(color);if(top>0)setPadding(0,top,0,0)}
  private fun button(s:String,action:()->Unit)=Button(this).apply{text=s;isAllCaps=false;textSize=14f;setTextColor(Color.WHITE);setBackgroundColor(blue);setOnClickListener{action()};layoutParams=LinearLayout.LayoutParams(-1,dp(54)).apply{topMargin=dp(9)}}
  private fun startRecording(){
-  if(checkSelfPermission(android.Manifest.permission.RECORD_AUDIO)!=android.content.pm.PackageManager.PERMISSION_GRANTED){pendingStart=true;requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO),micRequest);return}
+  val needed=mutableListOf<String>()
+  if(checkSelfPermission(android.Manifest.permission.RECORD_AUDIO)!=android.content.pm.PackageManager.PERMISSION_GRANTED)needed.add(android.Manifest.permission.RECORD_AUDIO)
+  if(Build.VERSION.SDK_INT>=33&&checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)!=android.content.pm.PackageManager.PERMISSION_GRANTED)needed.add(android.Manifest.permission.POST_NOTIFICATIONS)
+  if(needed.isNotEmpty()){pendingStart=true;requestPermissions(needed.toTypedArray(),micRequest);return}
   val mgr=getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
   startActivityForResult(mgr.createScreenCaptureIntent(),captureRequest)
  }
@@ -60,7 +63,7 @@ class MainActivity : Activity() {
  override fun onActivityResult(requestCode:Int,resultCode:Int,data:Intent?){super.onActivityResult(requestCode,resultCode,data);if(requestCode==captureRequest){if(resultCode==RESULT_OK&&data!=null){val i=Intent(this,RecorderService::class.java).setAction(RecorderService.ACTION_START).putExtra(RecorderService.EXTRA_RESULT_CODE,resultCode).putExtra(RecorderService.EXTRA_DATA,data);if(Build.VERSION.SDK_INT>=26)startForegroundService(i)else startService(i);status.text="RECORDING";status.setTextColor(Color.GREEN)}else toast("Screen capture permission was not granted.")}}
  override fun onRequestPermissionsResult(requestCode:Int,p:Array<out String>,r:IntArray){super.onRequestPermissionsResult(requestCode,p,r);if(requestCode==micRequest&&pendingStart){pendingStart=false;if(r.firstOrNull()==0)startRecording()else toast("Microphone permission is required.")}}
  private fun sendAction(a:String){startService(Intent(this,RecorderService::class.java).setAction(a))}
- private fun enableBall(){if(Settings.canDrawOverlays(this))startService(Intent(this,FloatingBallService::class.java))else startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,Uri.parse("package:$packageName")))}
+ private fun enableBall(){if(Settings.canDrawOverlays(this)){startService(Intent(this,FloatingBallService::class.java));toast("Floating BP control enabled")}else{pendingOverlay=true;startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,Uri.parse("package:$packageName")))}}
  private fun qualityDialog(){val names=arrayOf("720p · 30 FPS","1080p · 30 FPS","1080p · 60 FPS");val prefs=getSharedPreferences("recorder",MODE_PRIVATE);AlertDialog.Builder(this).setTitle("Video quality").setSingleChoiceItems(names,prefs.getInt("quality",1)){d,n->prefs.edit().putInt("quality",n).apply();d.dismiss();toast("Quality saved for the next recording.")}.setNegativeButton("Cancel",null).show()}
  private fun refreshLibrary(){
   if(!::library.isInitialized)return
@@ -79,6 +82,10 @@ class MainActivity : Activity() {
    item.addView(row);library.addView(item)
   }
  }
- override fun onResume(){super.onResume();if(::library.isInitialized)refreshLibrary()}
+ override fun onResume(){super.onResume()
+  if(pendingOverlay&&Settings.canDrawOverlays(this)){pendingOverlay=false;startService(Intent(this,FloatingBallService::class.java));toast("Floating BP control enabled")}
+  if(::status.isInitialized){val prefs=getSharedPreferences("recorder",MODE_PRIVATE);val recording=prefs.getBoolean("is_recording",false);val paused=prefs.getBoolean("is_paused",false);status.text=if(!recording)"READY"else if(paused)"PAUSED"else"RECORDING";status.setTextColor(if(recording)Color.rgb(255,190,90)else Color.rgb(110,220,170))}
+  if(::library.isInitialized)refreshLibrary()
+}
  private fun toast(s:String)=Toast.makeText(this,s,Toast.LENGTH_SHORT).show()
 }
