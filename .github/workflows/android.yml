@@ -37,6 +37,9 @@ jobs:
         with:
           gradle-version: "8.13"
 
+      - name: Compile debug variant (validation only)
+        run: gradle --no-daemon assembleDebug
+
       - name: Restore persistent release keystore
         env:
           KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
