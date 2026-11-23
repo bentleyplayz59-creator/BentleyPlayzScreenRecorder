@@ -53,7 +53,6 @@ class MainActivity : Activity() {
  private fun button(s:String,action:()->Unit)=Button(this).apply{text=s;isAllCaps=false;textSize=14f;setTextColor(Color.WHITE);setBackgroundColor(blue);setOnClickListener{action()};layoutParams=LinearLayout.LayoutParams(-1,dp(54)).apply{topMargin=dp(9)}}
  private fun startRecording(){
   if(checkSelfPermission(android.Manifest.permission.RECORD_AUDIO)!=android.content.pm.PackageManager.PERMISSION_GRANTED){pendingStart=true;requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO),micRequest);return}
-  if(Build.VERSION.SDK_INT>=33 && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)!=android.content.pm.PackageManager.PERMISSION_GRANTED)requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS),micRequest+1)
   val mgr=getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
   startActivityForResult(mgr.createScreenCaptureIntent(),captureRequest)
  }
