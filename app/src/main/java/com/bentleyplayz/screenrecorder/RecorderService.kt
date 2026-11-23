@@ -64,8 +64,8 @@ class RecorderService:Service(){
   val dm=DisplayMetrics()
   @Suppress("DEPRECATION") val display=(getSystemService(WINDOW_SERVICE) as WindowManager).defaultDisplay
   display.getRealMetrics(dm)
-  val longEdge=maxOf(dm.widthPixels,dm.heightPixels)
-  val scale=if(quality==0)min(720f/longEdge,1f)else min(1080f/longEdge,1f)
+  val shortEdge=min(dm.widthPixels,dm.heightPixels)
+  val scale=if(quality==0)min(720f/shortEdge,1f)else min(1080f/shortEdge,1f)
   val w=((dm.widthPixels*scale).toInt()/2)*2;val h=((dm.heightPixels*scale).toInt()/2)*2
   val fps=if(quality==2)60 else 30;val rate=if(quality==0)4_000_000 else if(quality==2)12_000_000 else 8_000_000
   val vf=MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC,w.coerceAtLeast(2),h.coerceAtLeast(2))
