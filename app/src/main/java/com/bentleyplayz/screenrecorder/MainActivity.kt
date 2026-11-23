@@ -19,7 +19,7 @@ import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.appcompat.app.AppCompatActivity
+import androidx.activity.ComponentActivity
 import androidx.core.content.ContextCompat
 import androidx.media3.common.MediaItem
 import androidx.media3.common.audio.Volume
@@ -36,7 +36,7 @@ import java.io.FileInputStream
 import java.io.IOException
 
 @UnstableApi
-class MainActivity : AppCompatActivity() {
+class MainActivity : ComponentActivity() {
     private var videoUri: Uri? = null
     private var player: ExoPlayer? = null
     private var recorder: MediaRecorder? = null
