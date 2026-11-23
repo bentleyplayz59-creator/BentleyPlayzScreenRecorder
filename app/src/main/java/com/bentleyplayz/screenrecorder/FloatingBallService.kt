@@ -1,11 +1,17 @@
 package com.bentleyplayz.screenrecorder
 
 import android.app.Service
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.Typeface
 import android.os.IBinder
+import android.os.Build
+import android.content.pm.ServiceInfo
 import android.provider.Settings
 import android.view.Gravity
 import android.view.MotionEvent
@@ -15,14 +21,20 @@ import android.widget.TextView
 import kotlin.math.abs
 
 class FloatingBallService:Service(){
+ companion object{private const val CHANNEL="bentley_floating";private const val NOTIFICATION_ID=7102}
  private lateinit var wm:WindowManager
  private var ball:TextView?=null
  private var menu:LinearLayout?=null
  private lateinit var lp:WindowManager.LayoutParams
  private fun dp(v:Int)=(v*resources.displayMetrics.density).toInt()
+ override fun onStartCommand(intent:Intent?,flags:Int,startId:Int):Int{if(intent?.action=="com.bentleyplayz.screenrecorder.HIDE_BALL"){stopSelf();return START_NOT_STICKY};return START_STICKY}
  override fun onCreate(){
   super.onCreate()
   if(!Settings.canDrawOverlays(this)){stopSelf();return}
+  if(Build.VERSION.SDK_INT>=26)(getSystemService(NOTIFICATION_SERVICE) as NotificationManager).createNotificationChannel(NotificationChannel(CHANNEL,"Floating recorder controls",NotificationManager.IMPORTANCE_LOW))
+  val hide=PendingIntent.getService(this,72,Intent(this,FloatingBallService::class.java).setAction("com.bentleyplayz.screenrecorder.HIDE_BALL"),PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+  val notice=Notification.Builder(this,CHANNEL).setSmallIcon(android.R.drawable.presence_video_online).setContentTitle("BentleyPlayz floating controls").setContentText("BP quick controls are available on screen.").addAction(Notification.Action.Builder(null,"Hide",hide).build()).setOngoing(true).build()
+  if(Build.VERSION.SDK_INT>=34)startForeground(NOTIFICATION_ID,notice,ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)else startForeground(NOTIFICATION_ID,notice)
   wm=getSystemService(WINDOW_SERVICE) as WindowManager
   val size=dp(58)
   lp=WindowManager.LayoutParams(size,size,WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,PixelFormat.TRANSLUCENT).apply{gravity=Gravity.TOP or Gravity.START;x=dp(18);y=dp(190)}
