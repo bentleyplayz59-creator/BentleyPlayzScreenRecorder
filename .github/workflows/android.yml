@@ -48,7 +48,7 @@ jobs:
           missing=0
           for name in KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
             if [ -z "${!name}" ]; then
-              echo "::error::Missing GitHub Actions secret: RELEASE_${name#KEYSTORE_}"
+              echo "::error::Missing GitHub Actions secret: RELEASE_${name}"
               missing=1
             fi
           done

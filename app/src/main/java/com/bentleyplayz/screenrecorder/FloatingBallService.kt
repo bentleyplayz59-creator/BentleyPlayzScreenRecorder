@@ -110,20 +110,20 @@ class FloatingBallService:Service(){
    if(min<=0)throw IllegalStateException("Microphone is unavailable")
    val rec=AudioRecord(MediaRecorder.AudioSource.MIC,rate,AudioFormat.CHANNEL_IN_MONO,AudioFormat.ENCODING_PCM_16BIT,maxOf(min,rate/5))
    if(rec.state!=AudioRecord.STATE_INITIALIZED){rec.release();throw IllegalStateException("Microphone could not start")}
-   var output:AudioTrack?=null
-   if(monitor){
+   val output:AudioTrack?=if(monitor){
     val outMin=AudioTrack.getMinBufferSize(rate,AudioFormat.CHANNEL_OUT_MONO,AudioFormat.ENCODING_PCM_16BIT)
     if(outMin<=0){rec.release();throw IllegalStateException("Audio output is unavailable")}
-    output=AudioTrack.Builder()
+    val track=AudioTrack.Builder()
      .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
      .setAudioFormat(AudioFormat.Builder().setSampleRate(rate).setEncoding(AudioFormat.ENCODING_PCM_16BIT).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build())
      .setBufferSizeInBytes(maxOf(outMin,rate/5*2))
      .setTransferMode(AudioTrack.MODE_STREAM)
      .build()
-    if(output.state!=AudioTrack.STATE_INITIALIZED){output.release();rec.release();throw IllegalStateException("Audio output could not start")}
-    output.setVolume(0.30f)
-    output.play()
-   }
+    if(track.state!=AudioTrack.STATE_INITIALIZED){track.release();rec.release();throw IllegalStateException("Audio output could not start")}
+    track.setVolume(0.30f)
+    track.play()
+    track
+   }else null
    audioRecord=rec;audioTrack=output;rec.startRecording()
    audioThread=Thread{
     val data=ShortArray(1024)
