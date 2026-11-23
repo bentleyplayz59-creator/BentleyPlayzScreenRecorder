@@ -2,6 +2,12 @@ plugins {
  id("com.android.application")
  id("org.jetbrains.kotlin.android")
 }
+
+val releaseStoreFile = System.getenv("RELEASE_KEYSTORE_PATH")
+val releaseStorePassword = System.getenv("RELEASE_KEYSTORE_PASSWORD")
+val releaseKeyAlias = System.getenv("RELEASE_KEY_ALIAS")
+val releaseKeyPassword = System.getenv("RELEASE_KEY_PASSWORD")
+
 android {
  namespace = "com.bentleyplayz.screenrecorder"
  compileSdk = 36
@@ -9,10 +15,24 @@ android {
   applicationId = "com.bentleyplayz.screenrecorder"
   minSdk = 29
   targetSdk = 35
-  versionCode = 2
-  versionName = "1.1.0"
+  versionCode = 3
+  versionName = "1.2.0"
  }
- buildTypes { release { isMinifyEnabled = false } }
+ signingConfigs {
+  create("release") {
+   if (!releaseStoreFile.isNullOrBlank()) storeFile = file(releaseStoreFile)
+   storePassword = releaseStorePassword
+   keyAlias = releaseKeyAlias
+   keyPassword = releaseKeyPassword
+  }
+ }
+ buildTypes {
+  debug { }
+  release {
+   isMinifyEnabled = false
+   signingConfig = signingConfigs.getByName("release")
+  }
+ }
  compileOptions {
   sourceCompatibility = JavaVersion.VERSION_17
   targetCompatibility = JavaVersion.VERSION_17

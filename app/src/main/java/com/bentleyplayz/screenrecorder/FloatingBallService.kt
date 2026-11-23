@@ -13,10 +13,10 @@ import android.os.IBinder
 import android.os.Handler
 import android.os.Looper
 import android.media.AudioRecord
+import android.media.AudioTrack
+import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.MediaRecorder
-import android.media.ToneGenerator
-import android.media.AudioManager
 import android.os.Build
 import android.content.pm.ServiceInfo
 import android.provider.Settings
@@ -28,21 +28,22 @@ import android.widget.TextView
 import kotlin.math.abs
 
 class FloatingBallService:Service(){
- companion object{private const val CHANNEL="bentley_floating";private const val NOTIFICATION_ID=7102}
+ companion object{private const val CHANNEL="bentley_floating";private const val NOTIFICATION_ID=7102;private const val MIC_ACTION_EXTRA="mic_test_action"}
  private lateinit var wm:WindowManager
  private var ball:TextView?=null
  private var menu:LinearLayout?=null
  private var meterView:TextView?=null
  private var audioRecord:AudioRecord?=null
+ private var audioTrack:AudioTrack?=null
  private var audioThread:Thread?=null
- private var tone:ToneGenerator?=null
  private val handler=Handler(Looper.getMainLooper())
  private lateinit var lp:WindowManager.LayoutParams
  private fun dp(v:Int)=(v*resources.displayMetrics.density).toInt()
  override fun onStartCommand(intent:Intent?,flags:Int,startId:Int):Int{
   when(intent?.action){
    "com.bentleyplayz.screenrecorder.HIDE_BALL"->{stopAudioTest();stopSelf();return START_NOT_STICKY}
-   "com.bentleyplayz.screenrecorder.MIC_TEST_START"->{startAudioTest()}
+   "com.bentleyplayz.screenrecorder.MIC_TEST_START"->{startAudioTest(false)}
+   "com.bentleyplayz.screenrecorder.MIC_MONITOR_START"->{startAudioTest(true)}
    "com.bentleyplayz.screenrecorder.MIC_TEST_STOP"->{stopAudioTest()}
   }
   return START_STICKY
@@ -74,13 +75,12 @@ class FloatingBallService:Service(){
   panel.addView(menuButton("PAUSE / RESUME"){send(RecorderService.ACTION_TOGGLE_PAUSE)})
   panel.addView(menuButton("STOP RECORDING"){send(RecorderService.ACTION_STOP)})
   panel.addView(labelSmall("AUDIO TEST"))
-  val micButton=menuActionButton("START MICROPHONE TEST"){requestMicTest()}
-  panel.addView(micButton)
+  panel.addView(menuActionButton("START LEVEL METER"){requestMicTest(false)})
   val meter=TextView(this).apply{text="INPUT  ▂▂▂▂▂▂▂▂";textSize=12f;setTextColor(Color.rgb(125,220,170));setPadding(dp(12),dp(5),dp(12),dp(10))}
   meterView=meter
   panel.addView(meter)
+  panel.addView(menuActionButton("HEAR LIVE MICROPHONE"){requestMicTest(true)})
   panel.addView(menuActionButton("STOP MICROPHONE TEST"){stopAudioTest()})
-  panel.addView(menuActionButton("PLAY TEST SOUND"){playTestSound()})
   panel.addView(menuButton("HIDE FLOATING BALL"){stopAudioTest();stopSelf()})
   val mp=WindowManager.LayoutParams(dp(210),WindowManager.LayoutParams.WRAP_CONTENT,WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,PixelFormat.TRANSLUCENT).apply{gravity=Gravity.TOP or Gravity.START;x=(lp.x-dp(145)).coerceAtLeast(0);y=(lp.y+dp(66)).coerceAtLeast(0)}
   menu=panel;wm.addView(panel,mp)
@@ -89,19 +89,20 @@ class FloatingBallService:Service(){
  private fun menuActionButton(text:String,action:()->Unit)=TextView(this).apply{textSize=13f;this.text=text;gravity=Gravity.CENTER_VERTICAL;setTextColor(Color.WHITE);setPadding(dp(12),dp(12),dp(12),dp(12));setOnClickListener{action()}}
  private fun menuButton(text:String,action:()->Unit)=TextView(this).apply{textSize=13f;this.text=text;gravity=Gravity.CENTER_VERTICAL;setTextColor(Color.WHITE);setPadding(dp(12),dp(12),dp(12),dp(12));setOnClickListener{removeMenu();action()}}
  private fun removeMenu(){stopAudioTest();menu?.let{if(it.isAttachedToWindow)wm.removeView(it)};menu=null;meterView=null}
- private fun requestMicTest(){
+ private fun requestMicTest(monitor:Boolean){
+  val action=if(monitor)"com.bentleyplayz.screenrecorder.MIC_MONITOR_START" else "com.bentleyplayz.screenrecorder.MIC_TEST_START"
   if(checkSelfPermission(android.Manifest.permission.RECORD_AUDIO)==android.content.pm.PackageManager.PERMISSION_GRANTED){
-   startService(Intent(this,FloatingBallService::class.java).setAction("com.bentleyplayz.screenrecorder.MIC_TEST_START"))
+   startService(Intent(this,FloatingBallService::class.java).setAction(action))
   }else{
-   startActivity(Intent(this,MicTestPermissionActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION))
+   startActivity(Intent(this,MicTestPermissionActivity::class.java).putExtra(MIC_ACTION_EXTRA,action).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION))
   }
  }
- private fun startAudioTest(){
+ private fun startAudioTest(monitor:Boolean){
   if(checkSelfPermission(android.Manifest.permission.RECORD_AUDIO)!=android.content.pm.PackageManager.PERMISSION_GRANTED){handler.post{meterView?.text="Microphone permission required"};return}
   try{
    stopAudioTest(false)
    if(Build.VERSION.SDK_INT>=29){
-    val n=Notification.Builder(this,CHANNEL).setSmallIcon(android.R.drawable.presence_video_online).setContentTitle("BentleyPlayz audio test").setContentText("Microphone level test is running.").setOngoing(true).build()
+    val n=Notification.Builder(this,CHANNEL).setSmallIcon(android.R.drawable.presence_video_online).setContentTitle("BentleyPlayz audio test").setContentText(if(monitor)"Live microphone monitoring is running." else "Microphone level test is running.").setOngoing(true).build()
     startForeground(NOTIFICATION_ID,n,ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
    }
    val rate=48000
@@ -109,7 +110,21 @@ class FloatingBallService:Service(){
    if(min<=0)throw IllegalStateException("Microphone is unavailable")
    val rec=AudioRecord(MediaRecorder.AudioSource.MIC,rate,AudioFormat.CHANNEL_IN_MONO,AudioFormat.ENCODING_PCM_16BIT,maxOf(min,rate/5))
    if(rec.state!=AudioRecord.STATE_INITIALIZED){rec.release();throw IllegalStateException("Microphone could not start")}
-   audioRecord=rec;rec.startRecording()
+   var output:AudioTrack?=null
+   if(monitor){
+    val outMin=AudioTrack.getMinBufferSize(rate,AudioFormat.CHANNEL_OUT_MONO,AudioFormat.ENCODING_PCM_16BIT)
+    if(outMin<=0){rec.release();throw IllegalStateException("Audio output is unavailable")}
+    output=AudioTrack.Builder()
+     .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
+     .setAudioFormat(AudioFormat.Builder().setSampleRate(rate).setEncoding(AudioFormat.ENCODING_PCM_16BIT).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build())
+     .setBufferSizeInBytes(maxOf(outMin,rate/5*2))
+     .setTransferMode(AudioTrack.MODE_STREAM)
+     .build()
+    if(output.state!=AudioTrack.STATE_INITIALIZED){output.release();rec.release();throw IllegalStateException("Audio output could not start")}
+    output.setVolume(0.30f)
+    output.play()
+   }
+   audioRecord=rec;audioTrack=output;rec.startRecording()
    audioThread=Thread{
     val data=ShortArray(1024)
     while(!Thread.currentThread().isInterrupted && audioRecord===rec){
@@ -120,9 +135,13 @@ class FloatingBallService:Service(){
       val level=(20.0*kotlin.math.log10(maxOf(peak,1).toDouble()/32767.0)).coerceIn(-60.0,0.0)
       val bars=((level+60.0)/6.0).toInt().coerceIn(0,10)
       handler.post{meterView?.text="INPUT  "+"▮".repeat(bars)+"▯".repeat(10-bars)}
+      if(output!=null){
+       val written=output.write(data,0,count,AudioTrack.WRITE_BLOCKING)
+       if(written<0){handler.post{meterView?.text="Audio playback error: $written"};break}
+      }
      }else if(count<0){handler.post{meterView?.text="Microphone read error: $count"};break}
     }
-   }.apply{name="BPMicLevelMeter";start()}
+   }.apply{name="BPMicAudioMonitor";start()}
   }catch(e:Exception){handler.post{meterView?.text="Mic test unavailable: ${e.message?: "audio error"}"}}
  }
  private fun stopAudioTest(downgrade:Boolean=true){
@@ -131,7 +150,12 @@ class FloatingBallService:Service(){
   audioThread?.interrupt();audioThread=null
   try{rec?.stop()}catch(_:Exception){}
   try{rec?.release()}catch(_:Exception){}
-  tone?.release();tone=null
+  val output=audioTrack
+  audioTrack=null
+  try{output?.pause()}catch(_:Exception){}
+  try{output?.flush()}catch(_:Exception){}
+  try{output?.stop()}catch(_:Exception){}
+  try{output?.release()}catch(_:Exception){}
   meterView?.text="INPUT  ▂▂▂▂▂▂▂▂"
   if(downgrade && Build.VERSION.SDK_INT>=29 && ::wm.isInitialized){
    try{
@@ -140,14 +164,8 @@ class FloatingBallService:Service(){
    }catch(_:Exception){}
   }
  }
- private fun playTestSound(){
-  try{tone?.release();tone=ToneGenerator(AudioManager.STREAM_MUSIC,80);tone?.startTone(ToneGenerator.TONE_PROP_BEEP,700)}
-  catch(_:Exception){handler.post{meterView?.text="Playback test unavailable"}}
- }
  private fun requestRecordingStart(){
-  val launch=Intent(this,CapturePermissionActivity::class.java).apply{
-   addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
-  }
+  val launch=Intent(this,CapturePermissionActivity::class.java).apply{addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)}
   startActivity(launch)
  }
  private fun openRecorder(){startActivity(Intent(this,MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP))}
@@ -160,6 +178,9 @@ class MicTestPermissionActivity:android.app.Activity(){
   if(checkSelfPermission(android.Manifest.permission.RECORD_AUDIO)==android.content.pm.PackageManager.PERMISSION_GRANTED){startMic();return}
   requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO),701)
  }
- private fun startMic(){startService(Intent(this,FloatingBallService::class.java).setAction("com.bentleyplayz.screenrecorder.MIC_TEST_START"));finish()}
+ private fun startMic(){
+  val action=intent.getStringExtra("mic_test_action")?: "com.bentleyplayz.screenrecorder.MIC_TEST_START"
+  startService(Intent(this,FloatingBallService::class.java).setAction(action));finish()
+ }
  override fun onRequestPermissionsResult(requestCode:Int,permissions:Array<out String>,grantResults:IntArray){super.onRequestPermissionsResult(requestCode,permissions,grantResults);if(requestCode==701&&grantResults.isNotEmpty()&&grantResults[0]==android.content.pm.PackageManager.PERMISSION_GRANTED)startMic()else finish()}
 }

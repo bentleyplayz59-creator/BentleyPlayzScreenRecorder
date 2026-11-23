@@ -37,18 +37,48 @@ jobs:
         with:
           gradle-version: "8.13"
 
-      - name: Build debug APK
-        run: gradle --no-daemon assembleDebug
+      - name: Restore persistent release keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          missing=0
+          for name in KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Missing GitHub Actions secret: RELEASE_${name#KEYSTORE_}"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo "::error::Add the four RELEASE_* signing secrets in repository Settings > Secrets and variables > Actions > Secrets."
+            false
+          fi
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/bentleyplayz-release.jks"
+          echo "RELEASE_KEYSTORE_PATH=$RUNNER_TEMP/bentleyplayz-release.jks" >> "$GITHUB_ENV"
+          echo "RELEASE_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+          echo "RELEASE_KEY_ALIAS=$KEY_ALIAS" >> "$GITHUB_ENV"
+          echo "RELEASE_KEY_PASSWORD=$KEY_PASSWORD" >> "$GITHUB_ENV"
+
+      - name: Build signed release APK
+        run: gradle --no-daemon assembleRelease
 
       - name: Prepare direct APK download
-        run: cp app/build/outputs/apk/debug/app-debug.apk BentleyPlayzScreenRecorder.apk
+        run: cp app/build/outputs/apk/release/app-release.apk BentleyPlayzScreenRecorder.apk
 
-      - name: Publish APK as a direct GitHub Release asset
+      - name: Verify APK signature
+        run: |
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)"
+          "$APKSIGNER" verify --verbose --print-certs BentleyPlayzScreenRecorder.apk
+
+      - name: Publish signed APK as a direct GitHub Release asset
         uses: softprops/action-gh-release@v2
         with:
           tag_name: screen-recorder-build-${{ github.run_number }}
           name: BentleyPlayz Screen Recorder build #${{ github.run_number }}
-          body: Automated Android APK build from commit ${{ github.sha }}.
+          body: Signed Android release APK from commit ${{ github.sha }}.
           files: BentleyPlayzScreenRecorder.apk
           generate_release_notes: false
           make_latest: true
