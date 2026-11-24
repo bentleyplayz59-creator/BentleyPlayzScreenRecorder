@@ -22,7 +22,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.ComponentActivity
 import androidx.core.content.ContextCompat
 import androidx.media3.common.MediaItem
-import androidx.media3.common.audio.Volume
+import androidx.media3.common.audio.ChannelMixingAudioProcessor
+import androidx.media3.common.audio.ChannelMixingMatrix
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.transformer.Composition
@@ -254,6 +255,19 @@ class MainActivity : ComponentActivity() {
         status.text = "Reviewing voiceover. Import the video again to return to video preview."
     }
 
+    private fun createVolumeProcessor(gain: Float): ChannelMixingAudioProcessor {
+        val processor = ChannelMixingAudioProcessor()
+        for (channels in 1..6) {
+            val matrix = if (channels <= 2) {
+                ChannelMixingMatrix.createForConstantGain(channels, channels)
+            } else {
+                ChannelMixingMatrix.createForConstantPower(channels, 2)
+            }
+            processor.putChannelMixingMatrix(matrix.scaleBy(gain))
+        }
+        return processor
+    }
+
     private fun exportVideo() {
         val source = videoUri
         val voice = voiceFile
@@ -264,10 +278,10 @@ class MainActivity : ComponentActivity() {
         exportButton.isEnabled = false
         status.text = "Exporting. Keep the app open until export completes."
         val videoItem = EditedMediaItem.Builder(MediaItem.fromUri(source))
-            .setEffects(Effects(listOf(Volume(originalGain)), emptyList()))
+            .setEffects(Effects(listOf(createVolumeProcessor(originalGain)), emptyList()))
             .build()
         val voiceItem = EditedMediaItem.Builder(MediaItem.fromUri(Uri.fromFile(voice)))
-            .setEffects(Effects(listOf(Volume(voiceGain)), emptyList()))
+            .setEffects(Effects(listOf(createVolumeProcessor(voiceGain)), emptyList()))
             .build()
         val videoSequence = EditedMediaItemSequence.Builder(listOf(videoItem)).build()
         val voiceSequence = EditedMediaItemSequence.Builder(listOf(voiceItem)).build()
